@@ -1,4 +1,3 @@
-// server.js
 require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
@@ -8,30 +7,35 @@ const jwt = require("jsonwebtoken");
 const { v4: uuidv4 } = require("uuid");
 
 const User = require("./models/User");
+const StaffAssign = require("./models/StaffAssign");
 const authMiddleware = require("./middleware/auth");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Simple in-memory captcha store: { id: { text, expiresAt } }
+// Simple in-memory captcha store
 const captchas = {};
 
 // Connect DB
-mongoose.connect(process.env.MONGO_URI, { })
+mongoose.connect(process.env.MONGO_URI, {})
   .then(() => console.log("✅ MongoDB connected"))
   .catch(err => console.error("MongoDB connect error:", err));
 
 // Create initial admin if none exists
 (async function ensureAdmin() {
   try {
+    console.log("Checking for existing admin...");
     const existing = await User.findOne({ role: "admin" }).exec();
     if (!existing) {
+      console.log("No admin found, creating new admin...");
       const pwd = process.env.ADMIN_INIT_PASS || "Admin@123";
       const hash = await bcrypt.hash(pwd, 10);
       const admin = new User({ role: "admin", username: "admin", name: "Administrator", passwordHash: hash });
       await admin.save();
-      console.log("✅ Initial admin created with username 'admin' and password from .env");
+      console.log("✅ Initial admin created with username 'admin' and password:", pwd);
+    } else {
+      console.log("Admin already exists, skipping creation.");
     }
   } catch (err) {
     console.error("Error creating initial admin:", err);
@@ -40,19 +44,16 @@ mongoose.connect(process.env.MONGO_URI, { })
 
 // --- CAPTCHA endpoint ---
 app.get("/api/captcha", (req, res) => {
-  // generate random mix of words & letters - length 6-8
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"; // avoid similar chars
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
   const length = 6 + Math.floor(Math.random() * 3);
   let text = "";
-  for (let i=0;i<length;i++) text += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < length; i++) text += chars[Math.floor(Math.random() * chars.length)];
   const id = uuidv4();
-  captchas[id] = { text, expiresAt: Date.now() + 2*60*1000 }; // 2 minutes expiry
-  // cleanup old ones occasionally (simple)
-  setTimeout(() => { delete captchas[id]; }, 2*60*1000 + 1000);
+  captchas[id] = { text, expiresAt: Date.now() + 2 * 60 * 1000 };
+  setTimeout(() => { delete captchas[id]; }, 2 * 60 * 1000 + 1000);
   res.json({ id, captcha: text });
 });
 
-// Helper: validate captcha
 function verifyCaptcha(id, input) {
   if (!id || !input) return false;
   const rec = captchas[id];
@@ -63,19 +64,17 @@ function verifyCaptcha(id, input) {
   return ok;
 }
 
-// --- Auth login endpoint (single unified endpoint) ---
+// --- Auth login endpoint ---
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { role, identifier, password, captchaId, captchaInput } = req.body;
-    // verify captcha
     const okCaptcha = verifyCaptcha(captchaId, captchaInput);
     if (!okCaptcha) return res.status(400).json({ error: "Invalid or expired captcha" });
 
-    // find user based on role and identifier
     let user = null;
-    if (role === "student") user = await User.findOne({ role: "student", studentReg: identifier }).exec();
-    else if (role === "staff") user = await User.findOne({ role: "staff", staffId: identifier }).exec();
-    else if (role === "admin") user = await User.findOne({ role: "admin", username: identifier }).exec();
+    if (role === "student") user = await User.findOne({ studentReg: identifier, role: "student" }).exec();
+    else if (role === "staff") user = await User.findOne({ staffId: identifier, role: "staff" }).exec();
+    else if (role === "admin") user = await User.findOne({ username: identifier, role: "admin" }).exec();
     else return res.status(400).json({ error: "Invalid role" });
 
     if (!user) return res.status(400).json({ error: "User not found" });
@@ -83,11 +82,10 @@ app.post("/api/auth/login", async (req, res) => {
     const match = await bcrypt.compare(password, user.passwordHash);
     if (!match) return res.status(400).json({ error: "Invalid credentials" });
 
-    // create token
-    const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "8h" });
-    res.json({ token, role: user.role, name: user.name });
+    const token = jwt.sign({ userId: user._id, role: role }, process.env.JWT_SECRET, { expiresIn: "8h" });
+    res.json({ token, role: role, name: user.name });
   } catch (err) {
-    console.error(err);
+    console.error("Login error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -95,22 +93,20 @@ app.post("/api/auth/login", async (req, res) => {
 // --- Admin: add student ---
 app.post("/api/admin/add-student", authMiddleware("admin"), async (req, res) => {
   try {
+    console.log("Add student request received:", req.body);
     const { studentReg, name, password, degree, year, department, section, dob, email, phone } = req.body;
 
-    // Validate all required fields
     if (!studentReg || !name || !password || !degree || !year || !department || !section || !dob || !email || !phone) {
       return res.status(400).json({ error: "All student fields are required" });
     }
 
-    // Check for existing student or username
-    const existing = await User.findOne({ $or: [{ studentReg }, { username: studentReg }] }).exec();
-    if (existing) return res.status(400).json({ error: "Student or username already exists" });
+    const existing = await User.findOne({ studentReg, role: "student" }).exec();
+    if (existing) return res.status(400).json({ error: "Student already exists" });
 
-    // Hash password
     const hash = await bcrypt.hash(password, 10);
+    console.log("Creating student with reg:", studentReg);
 
-    // Create student with all fields
-    const user = new User({
+    const student = new User({
       role: "student",
       studentReg,
       username: studentReg,
@@ -120,15 +116,16 @@ app.post("/api/admin/add-student", authMiddleware("admin"), async (req, res) => 
       year,
       department,
       section,
-      dob, // Add date of birth
+      dob,
       email,
       phone
     });
 
-    await user.save();
+    await student.save();
+    console.log("Student saved to 'users' collection, ID:", student._id);
     res.json({ message: "Student added", user: { studentReg, name, degree, year, department, section, dob, email, phone } });
   } catch (err) {
-    console.error(err);
+    console.error("Add student error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -136,14 +133,19 @@ app.post("/api/admin/add-student", authMiddleware("admin"), async (req, res) => 
 // --- Admin: add staff ---
 app.post("/api/admin/add-staff", authMiddleware("admin"), async (req, res) => {
   try {
+    console.log("Add staff request received:", req.body);
     const { staffId, name, password, email, phone, department, designation } = req.body;
     if (!staffId || !name || !password || !email || !phone || !department || !designation) {
       return res.status(400).json({ error: "All staff fields are required" });
     }
-    const existing = await User.findOne({ $or: [{ staffId }, { username: staffId }] }).exec();
-    if (existing) return res.status(400).json({ error: "Staff or username already exists" });
+
+    const existing = await User.findOne({ staffId, role: "staff" }).exec();
+    if (existing) return res.status(400).json({ error: "Staff already exists" });
+
     const hash = await bcrypt.hash(password, 10);
-    const user = new User({
+    console.log("Creating staff with id:", staffId);
+
+    const staff = new User({
       role: "staff",
       staffId,
       username: staffId,
@@ -154,30 +156,31 @@ app.post("/api/admin/add-staff", authMiddleware("admin"), async (req, res) => {
       department,
       designation
     });
-    await user.save();
+
+    await staff.save();
+    console.log("Staff saved to 'users' collection, ID:", staff._id);
     res.json({ message: "Staff added", user: { staffId, name, email, phone, department, designation } });
   } catch (err) {
-    console.error(err);
+    console.error("Add staff error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-const StaffAssign = require("./models/StaffAssign");
-
 app.post("/api/admin/assign-staff", authMiddleware("admin"), async (req, res) => {
   try {
+    console.log("Assign staff request received:", req.body);
     const { staffId, staffName, department, year, section, subject } = req.body;
     if (!staffId || !staffName || !department || !year || !section || !subject) {
       return res.status(400).json({ error: "All fields are required" });
     }
 
-    // Save to StaffAssign collection
     const assign = new StaffAssign({ staffId, staffName, department, year, section, subject, assignedAt: Date.now() });
     await assign.save();
+    console.log("Staff assignment saved to 'staffassign' collection, ID:", assign._id);
 
     res.json({ message: "Staff assigned successfully" });
   } catch (err) {
-    console.error(err);
+    console.error("Assign staff error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -186,19 +189,22 @@ app.post("/api/admin/assign-staff", authMiddleware("admin"), async (req, res) =>
 app.get("/api/admin/staff-list", authMiddleware("admin"), async (req, res) => {
   try {
     const staffs = await User.find({ role: "staff" }, "staffId name department").lean();
+    console.log("Fetched staff list:", staffs);
     res.json(staffs);
   } catch (err) {
+    console.error("Fetch staff list error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-
-// --- Admin: list users (for UI) ---
+// --- Admin: list users ---
 app.get("/api/admin/users", authMiddleware("admin"), async (req, res) => {
   try {
-    const users = await User.find({}, "-passwordHash").sort({ role: 1, name: 1 }).lean();
+    const users = await User.find({}, "-passwordHash").lean().sort((a, b) => a.name.localeCompare(b.name));
+    console.log("Fetched users:", users);
     res.json(users);
   } catch (err) {
+    console.error("Fetch users error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });

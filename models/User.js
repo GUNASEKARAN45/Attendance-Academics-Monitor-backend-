@@ -1,19 +1,20 @@
-// models/User.js
 const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
-  role: { type: String, enum: ["student","staff","admin"], required: true },
-  studentReg: { type: String  },  // e.g. registration number for students
-  staffId: { type: String },     // staff identifier
-  username: { type: String, required: true },   // generic username (for admin can be admin id)
-  name: { type: String },
+  role: { type: String, enum: ["admin", "student", "staff"], required: true },
+  studentReg: { type: String, unique: true, sparse: true }, // For students
+  staffId: { type: String, unique: true, sparse: true },   // For staff
+  username: { type: String, required: true, unique: true }, // Generic username
+  name: { type: String, required: true },
   passwordHash: { type: String, required: true },
-  degree: { type: String },         // e.g. B.E, B.Tech
-  year: { type: Number },           // e.g. 1, 2, 3, 4
-  department: { type: String },     // e.g. ECE, CSE
-  section: { type: String },   
- 
-
+  degree: { type: String },         // For students
+  year: { type: Number },           // For students
+  department: { type: String },     // For students and staff
+  section: { type: String },        // For students
+  dob: { type: Date },              // For students
+  email: { type: String },          // For students and staff
+  phone: { type: String },          // For students and staff
+  designation: { type: String },    // For staff
   createdAt: { type: Date, default: Date.now }
 });
 
