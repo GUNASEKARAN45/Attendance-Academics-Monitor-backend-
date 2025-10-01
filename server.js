@@ -1,3 +1,4 @@
+// server.js
 require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
@@ -94,10 +95,10 @@ app.post("/api/auth/login", async (req, res) => {
 // --- Admin: add student ---
 app.post("/api/admin/add-student", authMiddleware("admin"), async (req, res) => {
   try {
-    const { studentReg, name, password, degree, year, department, section } = req.body;
+    const { studentReg, name, password, degree, year, department, section, dob, email, phone } = req.body;
 
     // Validate all required fields
-    if (!studentReg || !name || !password || !degree || !year || !department || !section) {
+    if (!studentReg || !name || !password || !degree || !year || !department || !section || !dob || !email || !phone) {
       return res.status(400).json({ error: "All student fields are required" });
     }
 
@@ -118,24 +119,27 @@ app.post("/api/admin/add-student", authMiddleware("admin"), async (req, res) => 
       degree,
       year,
       department,
-      section
+      section,
+      dob, // Add date of birth
+      email,
+      phone
     });
 
     await user.save();
-    res.json({ message: "Student added", user: { studentReg, name, degree, year, department, section } });
-
+    res.json({ message: "Student added", user: { studentReg, name, degree, year, department, section, dob, email, phone } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-
 // --- Admin: add staff ---
 app.post("/api/admin/add-staff", authMiddleware("admin"), async (req, res) => {
   try {
-    const { staffId, name, password } = req.body;
-    if (!staffId || !password) return res.status(400).json({ error: "Missing fields" });
+    const { staffId, name, password, email, phone, department, designation } = req.body;
+    if (!staffId || !name || !password || !email || !phone || !department || !designation) {
+      return res.status(400).json({ error: "All staff fields are required" });
+    }
     const existing = await User.findOne({ $or: [{ staffId }, { username: staffId }] }).exec();
     if (existing) return res.status(400).json({ error: "Staff or username already exists" });
     const hash = await bcrypt.hash(password, 10);
@@ -144,10 +148,14 @@ app.post("/api/admin/add-staff", authMiddleware("admin"), async (req, res) => {
       staffId,
       username: staffId,
       name,
-      passwordHash: hash
+      passwordHash: hash,
+      email,
+      phone,
+      department,
+      designation
     });
     await user.save();
-    res.json({ message: "Staff added", user: { staffId, name } });
+    res.json({ message: "Staff added", user: { staffId, name, email, phone, department, designation } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
@@ -158,12 +166,13 @@ const StaffAssign = require("./models/StaffAssign");
 
 app.post("/api/admin/assign-staff", authMiddleware("admin"), async (req, res) => {
   try {
-    const { staffId, staffName, department, year, section } = req.body;
-    if (!staffId || !department || !year || !section) 
+    const { staffId, staffName, department, year, section, subject } = req.body;
+    if (!staffId || !staffName || !department || !year || !section || !subject) {
       return res.status(400).json({ error: "All fields are required" });
+    }
 
     // Save to StaffAssign collection
-    const assign = new StaffAssign({ staffId, staffName, department, year, section });
+    const assign = new StaffAssign({ staffId, staffName, department, year, section, subject, assignedAt: Date.now() });
     await assign.save();
 
     res.json({ message: "Staff assigned successfully" });
