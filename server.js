@@ -31,7 +31,12 @@ mongoose.connect(process.env.MONGO_URI, {})
       console.log("No admin found, creating new admin...");
       const pwd = process.env.ADMIN_INIT_PASS || "Admin@123";
       const hash = await bcrypt.hash(pwd, 10);
-      const admin = new User({ role: "admin", username: "admin", name: "Administrator", passwordHash: hash });
+      const admin = new User({ 
+        role: "admin", 
+        username: "admin", 
+        name: "Administrator", 
+        passwordHash: hash 
+      });
       await admin.save();
       console.log("✅ Initial admin created with username 'admin' and password:", pwd);
     } else {
@@ -47,20 +52,29 @@ app.get("/api/captcha", (req, res) => {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
   const length = 6 + Math.floor(Math.random() * 3);
   let text = "";
-  for (let i = 0; i < length; i++) text += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < length; i++) {
+    text += chars[Math.floor(Math.random() * chars.length)];
+  }
+
   const id = uuidv4();
-  captchas[id] = { text, expiresAt: Date.now() + 2 * 60 * 1000 };
-  setTimeout(() => { delete captchas[id]; }, 2 * 60 * 1000 + 1000);
+  captchas[id] = { text }; // store only captcha text, no expiry
+
   res.json({ id, captcha: text });
 });
 
+// --- CAPTCHA verification ---
 function verifyCaptcha(id, input) {
   if (!id || !input) return false;
   const rec = captchas[id];
   if (!rec) return false;
-  if (Date.now() > rec.expiresAt) { delete captchas[id]; return false; }
+
   const ok = rec.text.toLowerCase() === (input || "").toLowerCase();
-  if (ok) delete captchas[id];
+
+  if (ok) {
+    // delete only after successful verification
+    delete captchas[id];
+  }
+
   return ok;
 }
 
@@ -69,20 +83,32 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const { role, identifier, password, captchaId, captchaInput } = req.body;
     const okCaptcha = verifyCaptcha(captchaId, captchaInput);
-    if (!okCaptcha) return res.status(400).json({ error: "Invalid or expired captcha" });
+    if (!okCaptcha) {
+      return res.status(400).json({ error: "Invalid or expired captcha" });
+    }
 
     let user = null;
-    if (role === "student") user = await User.findOne({ studentReg: identifier, role: "student" }).exec();
-    else if (role === "staff") user = await User.findOne({ staffId: identifier, role: "staff" }).exec();
-    else if (role === "admin") user = await User.findOne({ username: identifier, role: "admin" }).exec();
-    else return res.status(400).json({ error: "Invalid role" });
+    if (role === "student") {
+      user = await User.findOne({ studentReg: identifier, role: "student" }).exec();
+    } else if (role === "staff") {
+      user = await User.findOne({ staffId: identifier, role: "staff" }).exec();
+    } else if (role === "admin") {
+      user = await User.findOne({ username: identifier, role: "admin" }).exec();
+    } else {
+      return res.status(400).json({ error: "Invalid role" });
+    }
 
     if (!user) return res.status(400).json({ error: "User not found" });
 
     const match = await bcrypt.compare(password, user.passwordHash);
     if (!match) return res.status(400).json({ error: "Invalid credentials" });
 
-    const token = jwt.sign({ userId: user._id, role: role }, process.env.JWT_SECRET, { expiresIn: "8h" });
+    const token = jwt.sign(
+      { userId: user._id, role: role }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: "8h" }
+    );
+
     res.json({ token, role: role, name: user.name });
   } catch (err) {
     console.error("Login error:", err);
@@ -135,6 +161,7 @@ app.post("/api/admin/add-staff", authMiddleware("admin"), async (req, res) => {
   try {
     console.log("Add staff request received:", req.body);
     const { staffId, name, password, email, phone, department, designation } = req.body;
+
     if (!staffId || !name || !password || !email || !phone || !department || !designation) {
       return res.status(400).json({ error: "All staff fields are required" });
     }
@@ -166,15 +193,26 @@ app.post("/api/admin/add-staff", authMiddleware("admin"), async (req, res) => {
   }
 });
 
+// --- Admin: assign staff ---
 app.post("/api/admin/assign-staff", authMiddleware("admin"), async (req, res) => {
   try {
     console.log("Assign staff request received:", req.body);
     const { staffId, staffName, department, year, section, subject } = req.body;
+
     if (!staffId || !staffName || !department || !year || !section || !subject) {
       return res.status(400).json({ error: "All fields are required" });
     }
 
-    const assign = new StaffAssign({ staffId, staffName, department, year, section, subject, assignedAt: Date.now() });
+    const assign = new StaffAssign({ 
+      staffId, 
+      staffName, 
+      department, 
+      year, 
+      section, 
+      subject, 
+      assignedAt: Date.now() 
+    });
+
     await assign.save();
     console.log("Staff assignment saved to 'staffassign' collection, ID:", assign._id);
 
