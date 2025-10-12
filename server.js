@@ -247,6 +247,45 @@ app.get("/api/admin/users", authMiddleware("admin"), async (req, res) => {
   }
 });
 
+// Add this new endpoint to your server.js, right after the other routes
+
+// --- Get current user profile ---
+app.get("/api/user/profile", authMiddleware(), async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('-passwordHash');
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json(user);
+  } catch (err) {
+    console.error("Fetch profile error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// --- Change password ---
+app.post("/api/user/change-password", authMiddleware(), async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "Both current and new passwords are required" });
+    }
+
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const match = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!match) return res.status(400).json({ error: "Current password is incorrect" });
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    user.passwordHash = hash;
+    await user.save();
+
+    res.json({ message: "Password updated successfully" });
+  } catch (err) {
+    console.error("Change password error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // --- Simple test / health ---
 app.get("/api/ping", (req, res) => res.json({ ok: true }));
 
