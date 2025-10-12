@@ -1,4 +1,3 @@
-// models/StaffAssign.js
 const mongoose = require("mongoose");
 
 const staffAssignSchema = new mongoose.Schema({
@@ -7,6 +6,7 @@ const staffAssignSchema = new mongoose.Schema({
   department: { type: String, required: true },
   year: { type: Number, required: true },
   section: { type: String, required: true },
+  subject: { type: String, required: true },       // Added subject field
   assignedAt: { type: Date, default: Date.now }
 });
 

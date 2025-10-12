@@ -19,8 +19,8 @@ async function createAdmin() {
     }
 
     // Define admin credentials
-    const username = "admin";
-    const name = "admin"; // Changed to "admin" as requested
+    const username = "Admin";
+    const name = "Admin"; // Changed to "admin" as requested
     const designation = "Administrator"; // Added designation
     const password = process.env.ADMIN_INIT_PASS || "Admin@123"; // Use .env password or default
     const adminId = "ADM001"; // Added adminId

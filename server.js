@@ -19,7 +19,7 @@ const captchas = {};
 
 // Connect DB
 mongoose.connect(process.env.MONGO_URI, {})
-  .then(() => console.log("✅ MongoDB connected"))
+  .then(() => console.log(" MongoDB connected"))
   .catch(err => console.error("MongoDB connect error:", err));
 
 // Create initial admin if none exists
@@ -43,7 +43,7 @@ mongoose.connect(process.env.MONGO_URI, {})
       });
       await admin.save();
       console.log(
-        "✅ Initial admin created with username 'admin', name 'admin', designation 'Administrator', adminId 'ADM001', and password:",
+        " Initial admin created with username 'admin', name 'admin', designation 'Administrator', adminId 'ADM001', and password:",
         pwd
       );
     } else {
