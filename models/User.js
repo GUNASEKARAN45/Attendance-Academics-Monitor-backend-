@@ -4,6 +4,7 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ["admin", "student", "staff"], required: true },
   studentReg: { type: String, unique: true, sparse: true }, // For students
   staffId: { type: String, unique: true, sparse: true },   // For staff
+  adminId: { type: String, unique: true, sparse: true },   // For admin
   username: { type: String, required: true, unique: true }, // Generic username
   name: { type: String, required: true },
   passwordHash: { type: String, required: true },
@@ -15,10 +16,11 @@ const userSchema = new mongoose.Schema({
   email: { type: String },          // For students and staff
   phone: { type: String },          // For students and staff
   designation: { type: String },    // For staff
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now }  
 });
 
 userSchema.index({ studentReg: 1 }, { unique: true, sparse: true });
 userSchema.index({ staffId: 1 }, { unique: true, sparse: true });
+userSchema.index({ adminId: 1 }, { unique: true, sparse: true }); // Add index for adminId
 
 module.exports = mongoose.model("User", userSchema);

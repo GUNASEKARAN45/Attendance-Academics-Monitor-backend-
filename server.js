@@ -34,11 +34,12 @@ mongoose.connect(process.env.MONGO_URI, {})
       const admin = new User({ 
         role: "admin", 
         username: "admin", 
+        adminId: "ADM001", // Added adminId
         name: "Administrator", 
         passwordHash: hash 
       });
       await admin.save();
-      console.log("✅ Initial admin created with username 'admin' and password:", pwd);
+      console.log("✅ Initial admin created with username 'admin', adminId 'ADM001', and password:", pwd);
     } else {
       console.log("Admin already exists, skipping creation.");
     }
@@ -236,9 +237,10 @@ app.get("/api/admin/staff-list", authMiddleware("admin"), async (req, res) => {
 });
 
 // --- Admin: list users ---
+// --- Admin: list users ---
 app.get("/api/admin/users", authMiddleware("admin"), async (req, res) => {
   try {
-    const users = await User.find({}, "-passwordHash").lean().sort((a, b) => a.name.localeCompare(b.name));
+    const users = await User.find({}, "-passwordHash").lean().sort({ name: 1 });
     console.log("Fetched users:", users);
     res.json(users);
   } catch (err) {
@@ -247,13 +249,16 @@ app.get("/api/admin/users", authMiddleware("admin"), async (req, res) => {
   }
 });
 
-// Add this new endpoint to your server.js, right after the other routes
-
 // --- Get current user profile ---
 app.get("/api/user/profile", authMiddleware(), async (req, res) => {
+  console.log('Profile request received for userId:', req.user?.userId); // Added logging
   try {
     const user = await User.findById(req.user.userId).select('-passwordHash');
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user) {
+      console.log('User not found for ID:', req.user.userId);
+      return res.status(404).json({ error: "User not found" });
+    }
+    console.log('User data sent:', user); // Added logging
     res.json(user);
   } catch (err) {
     console.error("Fetch profile error:", err);
