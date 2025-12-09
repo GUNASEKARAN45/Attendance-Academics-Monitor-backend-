@@ -578,8 +578,191 @@ app.get("/api/admin/marks", authMiddleware("admin"), async (req, res) => {
 });
 
 
+// GET: Fetch logged-in student's marks for all subjects
+app.get("/api/student/marks", authMiddleware("student"), async (req, res) => {
+  try {
+    const student = await User.findById(req.user.userId).select("studentReg year department section");
+    if (!student) return res.status(404).json({ error: "Student not found" });
 
+    const marksRecords = await StudentMarks.find({
+      studentReg: student.studentReg,
+      year: student.year,
+      department: student.department,
+      section: student.section,
+    }).select("subject ut1 ut2 ut3 model1 sem").lean();
 
+    // Map to clean format for frontend
+    const subjectsMarks = marksRecords.map(record => ({
+      name: record.subject,
+      marks: {
+        ut1: record.ut1 || 0,
+        ut2: record.ut2 || 0,
+        ut3: record.ut3 || 0,
+        model1: record.model1 || 0,
+        sem: record.sem || 0,
+      }
+    }));
+
+    res.json(subjectsMarks);
+  } catch (err) {
+    console.error("Error fetching student marks:", err);
+    res.status(500).json({ error: "Failed to fetch marks" });
+  }
+});
+
+const ExamSchedule = require("./models/ExamSchedule");
+
+// POST: Staff creates new exam schedule
+app.post("/api/staff/exam-schedule", authMiddleware("staff"), async (req, res) => {
+  try {
+    const {
+      subject,
+      subjectCode,
+      examType,
+      examDate,
+      year,
+      department,
+      section
+    } = req.body;
+
+    if (!subject || !subjectCode || !examType || !examDate || !year || !department || !section) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+
+    const exam = new ExamSchedule({
+      subject,
+      subjectCode,
+      examType,
+      examDate: new Date(examDate),
+      year: parseInt(year),
+      department: department.toUpperCase(),
+      section: section.toUpperCase(),
+      createdBy: req.user.userId
+    });
+
+    await exam.save();
+    res.json({ message: "Exam scheduled successfully", exam });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to schedule exam" });
+  }
+});
+
+// GET: Student fetches their exam schedule
+app.get("/api/student/exam-schedule", authMiddleware("student"), async (req, res) => {
+  try {
+    const student = await User.findById(req.user.userId);
+    if (!student) return res.status(404).json({ error: "Student not found" });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const exams = await ExamSchedule.find({
+      year: student.year,
+      department: student.department,
+      section: student.section
+    })
+    .sort({ examDate: 1 })
+    .lean();
+
+    const formatted = exams.map(e => ({
+      id: e._id,
+      date: e.examDate.toISOString().split('T')[0],
+      subject: e.subject,
+      type: e.examType === 'Semester' ? 'Semester' : 
+            e.examType.startsWith('UT') ? 'UT' : 
+            e.examType,
+      status: new Date(e.examDate) < today ? 'Finished' : 'Upcoming'
+    }));
+
+    // Split into upcoming and finished
+    const upcoming = formatted.filter(e => e.status === 'Upcoming');
+    const finished = formatted.filter(e => e.status === 'Finished');
+
+    res.json({ upcoming, finished });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch exam schedule" });
+  }
+});
+
+const Timetable = require("./models/Timetable");
+
+// POST: Save timetable entry
+app.post("/api/admin/timetable", authMiddleware("admin"), async (req, res) => {
+  try {
+    const { year, department, section, day, period, subject, staffName, room } = req.body;
+
+    if (!year || !department || !section || !day || !period || !subject || !staffName) {
+      return res.status(400).json({ error: "All required fields must be filled" });
+    }
+
+    const entry = new Timetable({
+      year: parseInt(year),
+      department: department.toUpperCase(),
+      section: section.toUpperCase(),
+      day,
+      period,
+      subject,
+      staffName,
+      room: room || "",
+      createdBy: req.user.userId
+    });
+
+    await entry.save();
+    res.json({ message: "Timetable entry saved!", entry });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to save timetable" });
+  }
+});
+
+// GET: Fetch timetable for a class
+app.get("/api/timetable", authMiddleware(), async (req, res) => {
+  try {
+    const { year, department, section } = req.query;
+    if (!year || !department || !section) {
+      return res.status(400).json({ error: "year, department, section required" });
+    }
+
+    const timetable = await Timetable.find({
+      year: parseInt(year),
+      department: department.toUpperCase(),
+      section: section.toUpperCase()
+    }).sort({ day: 1, period: 1 });
+
+    res.json(timetable);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch timetable" });
+  }
+});
+// PUT: Update existing timetable entry
+app.put("/api/admin/timetable/:id", authMiddleware("admin"), async (req, res) => {
+  try {
+    const { subject, staffName, room } = req.body;
+
+    const updated = await Timetable.findByIdAndUpdate(
+      req.params.id,
+      {
+        subject,
+        staffName,
+        room,
+        updatedAt: Date.now()
+      },
+      { new: true
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: "Entry not found" });
+    }
+
+    res.json({ message: "Updated successfully", entry: updated });
+  } catch (err) {
+    console.error("Timetable update error:", err);
+    res.status(500).json({ error: "Update failed" });
+  }
+});
 // --- Simple test / health ---
 app.get("/api/ping", (req, res) => res.json({ ok: true }));
 
