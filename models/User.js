@@ -1,26 +1,45 @@
+// models/User.js
 const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
   role: { type: String, enum: ["admin", "student", "staff"], required: true },
-  studentReg: { type: String, unique: true, sparse: true }, // For students
-  staffId: { type: String, unique: true, sparse: true },   // For staff
-  adminId: { type: String, unique: true, sparse: true },   // For admin (added)
-  username: { type: String, required: true, unique: true }, // Generic username
+  studentReg: { type: String, unique: true, sparse: true },
+  staffId: { type: String, unique: true, sparse: true },
+  adminId: { type: String, unique: true, sparse: true },
+  username: { type: String, required: true, unique: true },
   name: { type: String, required: true },
   passwordHash: { type: String, required: true },
-  degree: { type: String },         // For students
-  year: { type: Number },           // For students
-  department: { type: String },     // For students and staff
-  section: { type: String },        // For students
-  dob: { type: Date },              // For students
-  email: { type: String },          // For students and staff
-  phone: { type: String },          // For students and staff
-  designation: { type: String },    // For staff
+
+  // Student fields
+  degree: { type: String },
+  year: { type: Number },
+  department: { type: String },
+  section: { type: String },
+  dob: { type: Date },
+  email: { type: String },
+  phone: { type: String },
+
+  // Staff fields
+  designation: { type: String },
+
+  // NEW: Face Embedding (512-dimensional vector)
+  faceEmbedding: {
+    type: [Number],     // Array of floats
+    default: null,
+    validate: {
+      validator: function(v) {
+        return v === null || (Array.isArray(v) && v.length === 512);
+      },
+      message: "Face embedding must be a 512-length array or null"
+    }
+  },
+
   createdAt: { type: Date, default: Date.now },
 });
 
+
 userSchema.index({ studentReg: 1 }, { unique: true, sparse: true });
 userSchema.index({ staffId: 1 }, { unique: true, sparse: true });
-userSchema.index({ adminId: 1 }, { unique: true, sparse: true }); // Added index for adminId
+userSchema.index({ adminId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model("User", userSchema);
