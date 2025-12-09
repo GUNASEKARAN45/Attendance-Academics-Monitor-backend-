@@ -7,6 +7,7 @@ const jwt = require("jsonwebtoken");
 const { v4: uuidv4 } = require("uuid");
 const multer = require('multer');
 const upload = multer();
+const crypto = require('crypto');
 
 const User = require("./models/User");
 const StaffAssign = require("./models/StaffAssign");
@@ -25,6 +26,28 @@ mongoose.connect(process.env.MONGO_URI, {})
   .then(() => console.log(" MongoDB connected"))
   .catch(err => console.error("MongoDB connect error:", err));
 
+// Log a non-sensitive fingerprint of JWT secret at startup (length + sha256)
+(function logJwtSecretFingerprint() {
+  try {
+    const raw = process.env.JWT_SECRET || "";
+    const trimmed = raw.trim();
+    const normalized = (function (s) {
+      const t = s.trim();
+      if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+        return t.slice(1, -1);
+      }
+      return t;
+    })(raw);
+    if (!normalized) {
+      console.warn("JWT_SECRET is missing or empty");
+      return;
+    }
+    const hash = crypto.createHash('sha256').update(normalized).digest('hex');
+    console.log(" JWT secret: length =", normalized.length, "sha256 =", hash);
+  } catch (e) {
+    // ignore
+  }
+})();
 // Create initial admin if none exists
 // ... (previous imports and middleware setup)
 
@@ -113,10 +136,24 @@ app.post("/api/auth/login", async (req, res) => {
     const match = await bcrypt.compare(password, user.passwordHash);
     if (!match) return res.status(400).json({ error: "Invalid credentials" });
 
+    const jwtSecretRaw = process.env.JWT_SECRET || "";
+    const jwtSecretTrimmed = jwtSecretRaw.trim();
+    const jwtSecretNormalized = (function (s) {
+      const t = s.trim();
+      if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+        return t.slice(1, -1);
+      }
+      return t;
+    })(jwtSecretRaw);
+    if (!jwtSecretNormalized) {
+      console.error("JWT_SECRET environment variable is missing");
+      return res.status(500).json({ error: "Server misconfiguration" });
+    }
+
     const token = jwt.sign(
-      { userId: user._id, role: role }, 
-      process.env.JWT_SECRET, 
-      { expiresIn: "8h" }
+      { userId: user._id, role: role },
+      jwtSecretNormalized,
+      { expiresIn: "8h", algorithm: "HS256" }
     );
 
     res.json({ token, role: role, name: user.name });
