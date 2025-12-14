@@ -763,6 +763,56 @@ app.put("/api/admin/timetable/:id", authMiddleware("admin"), async (req, res) =>
     res.status(500).json({ error: "Update failed" });
   }
 });
+// GET: Today's attendance for logged-in student (real data from attendance_db)
+app.get("/api/student/today-attendance", authMiddleware("student"), async (req, res) => {
+  try {
+    const student = await User.findById(req.user.userId).select("studentReg");
+    if (!student) return res.status(404).json({ error: "Student not found" });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Connect to the correct database: attendance_db
+    const attendanceDb = mongoose.connection.useDb("attendance_db");
+    const Attendance = attendanceDb.model(
+      "Attendance",
+      new mongoose.Schema({}, { strict: false }),
+      "attendance"
+    );
+
+    const records = await Attendance.find({
+      studentReg: student.studentReg,
+      date: {
+        $gte: today.toISOString().split("T")[0], // "2025-12-09"
+        $lt: tomorrow.toISOString().split("T")[0],
+      },
+    }).lean();
+
+    // Create array of 7 periods, default = null (not marked)
+    const periods = Array(7).fill(null);
+
+    records.forEach((rec) => {
+      const periodIndex = rec.session - 1; // session:4 → index 3
+      if (periodIndex >= 0 && periodIndex < 7) {
+        periods[periodIndex] = rec.attendance === 1 ? true : false;
+      }
+    });
+
+    res.json({
+      date: today.toISOString().split("T")[0],
+      periods, // [true, false, null, true, ...]
+      markedPeriods: records.length,
+      presentCount: records.filter(r => r.attendance === 1).length,
+    });
+  } catch (err) {
+    console.error("Today attendance fetch error:", err);
+    res.status(500).json({ error: "Failed to load attendance" });
+  }
+});
+
+
 // --- Simple test / health ---
 app.get("/api/ping", (req, res) => res.json({ ok: true }));
 
