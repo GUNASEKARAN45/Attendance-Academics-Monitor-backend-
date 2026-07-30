@@ -480,7 +480,39 @@ app.get("/api/staff/student-insights", authMiddleware("staff"), async (req, res)
   }
 });
 
-// server.js — Add this endpoint
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+app.get("/api/admin/students/search", authMiddleware("admin"), async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    if (!q) return res.json([]);
+
+    const searchRegex = new RegExp(escapeRegex(q), "i");
+    const students = await User.find({
+      role: "student",
+      $or: [
+        { name: searchRegex },
+        { studentReg: searchRegex },
+      ],
+    })
+      .select("studentReg name")
+      .sort({ name: 1, studentReg: 1 })
+      .limit(20)
+      .lean();
+
+    res.json(students.map(student => ({
+      id: student._id,
+      name: student.name,
+      regNo: student.studentReg,
+    })));
+  } catch (err) {
+    console.error("Student search error:", err);
+    res.status(500).json({ error: "Failed to search students" });
+  }
+});
+
 app.get("/api/admin/filtered-students", authMiddleware("admin"), async (req, res) => {
   try {
     const { department, year, section } = req.query;
