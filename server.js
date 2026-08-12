@@ -72,6 +72,8 @@ app.get("/api/captcha", (req, res) => {
   res.json({ id, captcha: text });
 });
 
+const csv = require('fast-csv');
+
 // --- CAPTCHA verification ---
 function verifyCaptcha(id, input) {
   if (!id || !input) return false;
@@ -87,6 +89,39 @@ function verifyCaptcha(id, input) {
 
   return ok;
 }
+
+app.get('/api/export-attendance', async (req, res) => {
+  try {
+    const attendances = await Attendance.find();
+    const csvStream = csv.format({ headers: true });
+
+    res.header('Content-Type', 'text/csv');
+    res.header('Content-Disposition', 'attachment; filename=attendance.csv');
+
+    csvStream.pipe(res);
+    attendances.forEach(attendance => {
+      csvStream.write({
+        studentId: attendance.studentId,
+        studentReg: attendance.studentReg,
+        name: attendance.name,
+        year: attendance.year,
+        department: attendance.department,
+        section: attendance.section,
+        date: attendance.date,
+        session1: attendance.session1,
+        session2: attendance.session2,
+        session3: attendance.session3,
+        session4: attendance.session4,
+        session5: attendance.session5,
+        session6: attendance.session6,
+        session7: attendance.session7
+      });
+    });
+    csvStream.end();
+  } catch (error) {
+    res.status(500).send('Error exporting attendance data');
+  }
+});
 
 // --- Auth login endpoint ---
 app.post("/api/auth/login", async (req, res) => {
