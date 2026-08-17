@@ -12,6 +12,8 @@ const User = require("./models/User");
 const StaffAssign = require("./models/StaffAssign");
 const authMiddleware = require("./middleware/auth");
 const StudentMarks = require("./models/StudentMarks");
+const Note = require("./models/Note");
+const Attendance = require("./models/Attendance");
 
 const app = express();
 app.use(cors());
@@ -812,6 +814,121 @@ app.get("/api/student/today-attendance", authMiddleware("student"), async (req, 
   }
 });
 
+
+// --- NOTE CRUD ENDPOINTS ---
+
+// POST: Create a new note
+app.post("/api/notes", authMiddleware("staff"), async (req, res) => {
+  try {
+    const { attendanceId, noteDate, content } = req.body;
+
+    if (!attendanceId || !noteDate || !content) {
+      return res.status(400).json({ error: "attendanceId, noteDate, and content are required" });
+    }
+
+    // Verify attendance record exists
+    const attendance = await Attendance.findById(attendanceId);
+    if (!attendance) {
+      return res.status(404).json({ error: "Attendance record not found" });
+    }
+
+    const note = new Note({
+      attendanceId,
+      teacherId: req.user.userId,
+      noteDate: new Date(noteDate),
+      content: content.trim()
+    });
+
+    await note.save();
+    res.status(201).json(note);
+  } catch (err) {
+    console.error("Create note error:", err);
+    res.status(500).json({ error: "Failed to create note" });
+  }
+});
+
+// GET: Fetch notes with filtering
+app.get("/api/notes", authMiddleware("staff"), async (req, res) => {
+  try {
+    const { attendanceId, teacherId, startDate, endDate } = req.query;
+
+    const filter = {};
+    if (attendanceId) filter.attendanceId = attendanceId;
+    if (teacherId) filter.teacherId = teacherId;
+
+    if (startDate || endDate) {
+      filter.noteDate = {};
+      if (startDate) filter.noteDate.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setDate(end.getDate() + 1); // Include entire day
+        filter.noteDate.$lt = end;
+      }
+    }
+
+    const notes = await Note.find(filter)
+      .populate("teacherId", "name staffId")
+      .populate("attendanceId", "studentReg date")
+      .sort({ noteDate: -1 })
+      .lean();
+
+    res.json(notes);
+  } catch (err) {
+    console.error("Fetch notes error:", err);
+    res.status(500).json({ error: "Failed to fetch notes" });
+  }
+});
+
+// PUT: Update a note
+app.put("/api/notes/:id", authMiddleware("staff"), async (req, res) => {
+  try {
+    const { content } = req.body;
+
+    if (!content) {
+      return res.status(400).json({ error: "content is required" });
+    }
+
+    const note = await Note.findById(req.params.id);
+    if (!note) {
+      return res.status(404).json({ error: "Note not found" });
+    }
+
+    // Verify the requesting teacher owns this note
+    if (note.teacherId.toString() !== req.user.userId) {
+      return res.status(403).json({ error: "Unauthorized to update this note" });
+    }
+
+    note.content = content.trim();
+    note.updatedAt = new Date();
+    await note.save();
+
+    res.json(note);
+  } catch (err) {
+    console.error("Update note error:", err);
+    res.status(500).json({ error: "Failed to update note" });
+  }
+});
+
+// DELETE: Remove a note
+app.delete("/api/notes/:id", authMiddleware("staff"), async (req, res) => {
+  try {
+    const note = await Note.findById(req.params.id);
+    if (!note) {
+      return res.status(404).json({ error: "Note not found" });
+    }
+
+    // Verify the requesting teacher owns this note
+    if (note.teacherId.toString() !== req.user.userId) {
+      return res.status(403).json({ error: "Unauthorized to delete this note" });
+    }
+
+    await Note.findByIdAndDelete(req.params.id);
+    res.json({ message: "Note deleted successfully" });
+  } catch (err) {
+    console.error("Delete note error:", err);
+    res.status(500).json({ error: "Failed to delete note" });
+  }
+});
 
 // --- Simple test / health ---
 app.get("/api/ping", (req, res) => res.json({ ok: true }));
